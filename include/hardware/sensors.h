@@ -56,11 +56,13 @@ __BEGIN_DECLS
 #define SENSOR_TYPE_GYROSCOPE           4
 #define SENSOR_TYPE_LIGHT               5
 #define SENSOR_TYPE_PRESSURE            6
-#define SENSOR_TYPE_TEMPERATURE         7
+#define SENSOR_TYPE_TEMPERATURE         7   // deprecated
 #define SENSOR_TYPE_PROXIMITY           8
 #define SENSOR_TYPE_GRAVITY             9
 #define SENSOR_TYPE_LINEAR_ACCELERATION 10
 #define SENSOR_TYPE_ROTATION_VECTOR     11
+#define SENSOR_TYPE_RELATIVE_HUMIDITY   12
+#define SENSOR_TYPE_AMBIENT_TEMPERATURE 13
 
 /**
  * Values returned by the accelerometer in various locations in the universe.
@@ -116,8 +118,8 @@ __BEGIN_DECLS
  *    O: Origin (x=0,y=0,z=0)
  *
  *
- * Orientation
- * ----------- 
+ * SENSOR_TYPE_ORIENTATION
+ * -----------------------
  * 
  * All values are angles in degrees.
  * 
@@ -153,8 +155,8 @@ __BEGIN_DECLS
  *  where the X axis is along the long side of the plane (tail to nose).
  *  
  *  
- * Acceleration
- * ------------
+ * SENSOR_TYPE_ACCELEROMETER
+ * -------------------------
  *
  *  All values are in SI units (m/s^2) and measure the acceleration of the
  *  device minus the force of gravity.
@@ -180,8 +182,8 @@ __BEGIN_DECLS
  *    gravity (-9.81 m/s^2).
  *    
  *    
- * Magnetic Field
- * --------------
+ * SENSOR_TYPE_MAGNETIC_FIELD
+ * --------------------------
  * 
  *  All values are in micro-Tesla (uT) and measure the ambient magnetic
  *  field in the X, Y and Z axis.
@@ -189,8 +191,9 @@ __BEGIN_DECLS
  *  Magnetic Field sensors return sensor events for all 3 axes at a constant
  *  rate defined by setDelay().
  *
- * Gyroscope
- * ---------
+ * SENSOR_TYPE_GYROSCOPE
+ * ---------------------
+ *
  *  All values are in radians/second and measure the rate of rotation
  *  around the X, Y and Z axis.  The coordinate system is the same as is
  *  used for the acceleration sensor. Rotation is positive in the
@@ -202,8 +205,8 @@ __BEGIN_DECLS
  *  with the definition of roll given earlier.
  *  The range should at least be 17.45 rad/s (ie: ~1000 deg/s).
  *
- * Proximity
- * ---------
+ * SENSOR_TYPE_PROXIMITY
+ * ----------------------
  *
  * The distance value is measured in centimeters.  Note that some proximity
  * sensors only support a binary "close" or "far" measurement.  In this case,
@@ -211,44 +214,44 @@ __BEGIN_DECLS
  * less than maxRange in the "near" state.
  *
  * Proximity sensors report a value only when it changes and each time the
- * sensor is enabled. setDelay() is ignored.
+ * sensor is enabled.
  *
- * Light
- * -----
+ * SENSOR_TYPE_LIGHT
+ * -----------------
  *
  * The light sensor value is returned in SI lux units.
  *
  * Light sensors report a value only when it changes and each time the
- * sensor is enabled. setDelay() is ignored.
+ * sensor is enabled.
  *
- * Pressure
- * --------
+ * SENSOR_TYPE_PRESSURE
+ * --------------------
  *
- * The pressure sensor value is returned in hectopascal (hPa)
+ * The pressure sensor return the athmospheric pressure in hectopascal (hPa)
  *
  * Pressure sensors report events at a constant rate defined by setDelay().
  *
- * Gravity
- * -------
- * A gravity output indicates the direction of and magnitude of gravity in the devices's
- * coordinates.  On Earth, the magnitude is 9.8.  Units are m/s^2.  The coordinate system
- * is the same as is used for the acceleration sensor.
- * When the device is at rest, the output of the gravity sensor should be identical
- * to that of the accelerometer.
- *
- * Linear Acceleration
+ * SENSOR_TYPE_GRAVITY
  * -------------------
- * Indicates the linear acceleration of the device in device coordinates, not including gravity.
- * This output is essentially Acceleration - Gravity.  Units are m/s^2.  The coordinate system is
- * the same as is used for the acceleration sensor.
- * The output of the accelerometer, gravity and  linear-acceleration sensors must obey the
- * following relation:
  *
- *   acceleration = gravity + linear-acceleration
+ * A gravity output indicates the direction of and magnitude of gravity in
+ * the devices's coordinates.  On Earth, the magnitude is 9.8 m/s^2.
+ * Units are m/s^2.  The coordinate system is the same as is used for the
+ * acceleration sensor. When the device is at rest, the output of the
+ * gravity sensor should be identical to that of the accelerometer.
+ *
+ * SENSOR_TYPE_LINEAR_ACCELERATION
+ * --------------------------------
+ *
+ * Indicates the linear acceleration of the device in device coordinates,
+ * not including gravity.
+ * This output is essentially Acceleration - Gravity.  Units are m/s^2.
+ * The coordinate system is the same as is used for the acceleration sensor.
  *
  *
- * Rotation Vector
- * ---------------
+ * SENSOR_TYPE_ROTATION_VECTOR
+ * ---------------------------
+ *
  * A rotation vector represents the orientation of the device as a combination
  * of an angle and an axis, in which the device has rotated through an angle
  * theta around an axis <x, y, z>. The three elements of the rotation vector
@@ -260,12 +263,43 @@ __BEGIN_DECLS
  * Elements of the rotation vector are unitless.  The x, y, and z axis are defined
  * in the same was as for the acceleration sensor.
  *
+ * The reference coordinate system is defined as a direct orthonormal basis,
+ * where:
+ *
+ * - X is defined as the vector product Y.Z (It is tangential to
+ * the ground at the device's current location and roughly points East).
+ *
+ * - Y is tangential to the ground at the device's current location and
+ * points towards the magnetic North Pole.
+ *
+ * - Z points towards the sky and is perpendicular to the ground.
+ *
+ *
  * The rotation-vector is stored as:
  *
  *   sensors_event_t.data[0] = x*sin(theta/2)
  *   sensors_event_t.data[1] = y*sin(theta/2)
  *   sensors_event_t.data[2] = z*sin(theta/2)
  *   sensors_event_t.data[3] =   cos(theta/2)
+ *
+ *
+ * SENSOR_TYPE_RELATIVE_HUMIDITY
+ * ------------------------------
+ *
+ * A relative humidity sensor measures relative ambient air humidity and
+ * returns a value in percent.
+ *
+ * Relative humidity sensors report a value only when it changes and each
+ * time the sensor is enabled.
+ *
+ *
+ * SENSOR_TYPE_AMBIENT_TEMPERATURE
+ * -------------------------------
+ *
+ * The ambient (room) temperature in degree Celsius.
+ *
+ * Temperature sensors report a value only when it changes and each time the
+ * sensor is enabled.
  *
  */
 
@@ -333,6 +367,9 @@ typedef struct sensors_event_t {
 
         /* pressure in hectopascal (hPa) */
         float           pressure;
+
+        /* relative humidity in percent */
+        float           relative_humidity;
     };
     uint32_t        reserved1[4];
 } sensors_event_t;
@@ -362,9 +399,10 @@ struct sensor_t {
     const char*     name;
     /* vendor of the hardware part */
     const char*     vendor;
-    /* version of the hardware part + driver. The value of this field is
-     * left to the implementation and doesn't have to be monotonically
-     * increasing.
+    /* version of the hardware part + driver. The value of this field
+     * must increase when the driver is updated in a way that changes the
+     * output of this sensor. This is important for fused sensors when the
+     * fusion algorithm is updated.
      */    
     int             version;
     /* handle that identifies this sensors. This handle is used to activate
@@ -408,9 +446,10 @@ struct sensors_poll_device_t {
 
     /**
      * Set the delay between sensor events in nanoseconds for a given sensor.
-     * It is an error to set a delay inferior to the value defined by
-     * sensor_t::minDelay. If sensor_t::minDelay is zero, setDelay() is
-     * ignored and returns 0.
+     *
+     * If the requested value is less than sensor_t::minDelay, then it's
+     * silently clamped to sensor_t::minDelay unless sensor_t::minDelay is
+     * 0, in which case it is clamped to >= 1ms.
      *
      * @return 0 if successful, < 0 on error
      */
@@ -442,7 +481,5 @@ static inline int sensors_close(struct sensors_poll_device_t* device) {
 }
 
 __END_DECLS
-
-#include <hardware/sensors_deprecated.h>
 
 #endif  // ANDROID_SENSORS_INTERFACE_H

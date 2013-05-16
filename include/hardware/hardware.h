@@ -21,6 +21,7 @@
 #include <sys/cdefs.h>
 
 #include <cutils/native_handle.h>
+#include <system/graphics.h>
 
 __BEGIN_DECLS
 
@@ -32,6 +33,46 @@ __BEGIN_DECLS
 
 #define HARDWARE_MODULE_TAG MAKE_TAG_CONSTANT('H', 'W', 'M', 'T')
 #define HARDWARE_DEVICE_TAG MAKE_TAG_CONSTANT('H', 'W', 'D', 'T')
+
+#define HARDWARE_MAKE_API_VERSION(maj,min) \
+            ((((maj) & 0xff) << 8) | ((min) & 0xff))
+
+#define HARDWARE_MAKE_API_VERSION_2(maj,min,hdr) \
+            ((((maj) & 0xff) << 24) | (((min) & 0xff) << 16) | ((hdr) & 0xffff))
+#define HARDWARE_API_VERSION_2_MAJ_MIN_MASK 0xffff0000
+#define HARDWARE_API_VERSION_2_HEADER_MASK  0x0000ffff
+
+
+/*
+ * The current HAL API version.
+ *
+ * All module implementations must set the hw_module_t.hal_api_version field
+ * to this value when declaring the module with HAL_MODULE_INFO_SYM.
+ *
+ * Note that previous implementations have always set this field to 0.
+ * Therefore, libhardware HAL API will always consider versions 0.0 and 1.0
+ * to be 100% binary compatible.
+ *
+ */
+#define HARDWARE_HAL_API_VERSION HARDWARE_MAKE_API_VERSION(1, 0)
+
+/*
+ * Helper macros for module implementors.
+ *
+ * The derived modules should provide convenience macros for supported
+ * versions so that implementations can explicitly specify module/device
+ * versions at definition time.
+ *
+ * Use this macro to set the hw_module_t.module_api_version field.
+ */
+#define HARDWARE_MODULE_API_VERSION(maj,min) HARDWARE_MAKE_API_VERSION(maj,min)
+#define HARDWARE_MODULE_API_VERSION_2(maj,min,hdr) HARDWARE_MAKE_API_VERSION_2(maj,min,hdr)
+
+/*
+ * Use this macro to set the hw_device_t.version field
+ */
+#define HARDWARE_DEVICE_API_VERSION(maj,min) HARDWARE_MAKE_API_VERSION(maj,min)
+#define HARDWARE_DEVICE_API_VERSION_2(maj,min,hdr) HARDWARE_MAKE_API_VERSION_2(maj,min,hdr)
 
 struct hw_module_t;
 struct hw_module_methods_t;
@@ -46,11 +87,47 @@ typedef struct hw_module_t {
     /** tag must be initialized to HARDWARE_MODULE_TAG */
     uint32_t tag;
 
-    /** major version number for the module */
-    uint16_t version_major;
+    /**
+     * The API version of the implemented module. The module owner is
+     * responsible for updating the version when a module interface has
+     * changed.
+     *
+     * The derived modules such as gralloc and audio own and manage this field.
+     * The module user must interpret the version field to decide whether or
+     * not to inter-operate with the supplied module implementation.
+     * For example, SurfaceFlinger is responsible for making sure that
+     * it knows how to manage different versions of the gralloc-module API,
+     * and AudioFlinger must know how to do the same for audio-module API.
+     *
+     * The module API version should include a major and a minor component.
+     * For example, version 1.0 could be represented as 0x0100. This format
+     * implies that versions 0x0100-0x01ff are all API-compatible.
+     *
+     * In the future, libhardware will expose a hw_get_module_version()
+     * (or equivalent) function that will take minimum/maximum supported
+     * versions as arguments and would be able to reject modules with
+     * versions outside of the supplied range.
+     */
+    uint16_t module_api_version;
+#define version_major module_api_version
+    /**
+     * version_major/version_minor defines are supplied here for temporary
+     * source code compatibility. They will be removed in the next version.
+     * ALL clients must convert to the new version format.
+     */
 
-    /** minor version number of the module */
-    uint16_t version_minor;
+    /**
+     * The API version of the HAL module interface. This is meant to
+     * version the hw_module_t, hw_module_methods_t, and hw_device_t
+     * structures and definitions.
+     *
+     * The HAL interface owns this field. Module users/implementations
+     * must NOT rely on this value for version information.
+     *
+     * Presently, 0 is the only valid value.
+     */
+    uint16_t hal_api_version;
+#define version_minor hal_api_version
 
     /** Identifier of module */
     const char *id;
@@ -87,7 +164,22 @@ typedef struct hw_device_t {
     /** tag must be initialized to HARDWARE_DEVICE_TAG */
     uint32_t tag;
 
-    /** version number for hw_device_t */
+    /**
+     * Version of the module-specific device API. This value is used by
+     * the derived-module user to manage different device implementations.
+     *
+     * The module user is responsible for checking the module_api_version
+     * and device version fields to ensure that the user is capable of
+     * communicating with the specific module implementation.
+     *
+     * One module can support multiple devices with different versions. This
+     * can be useful when a device interface changes in an incompatible way
+     * but it is still necessary to support older implementations at the same
+     * time. One such example is the Camera 2.0 API.
+     *
+     * This field is interpreted by the module user and is ignored by the
+     * HAL interface itself.
+     */
     uint32_t version;
 
     /** reference to the module this device belongs to */
@@ -113,92 +205,25 @@ typedef struct hw_device_t {
 
 /**
  * Get the module info associated with a module by id.
- * @return: 0 == success, <0 == error and *pHmi == NULL
+ *
+ * @return: 0 == success, <0 == error and *module == NULL
  */
 int hw_get_module(const char *id, const struct hw_module_t **module);
 
-
 /**
- * pixel format definitions
- */
-
-enum {
-    HAL_PIXEL_FORMAT_RGBA_8888          = 1,
-    HAL_PIXEL_FORMAT_RGBX_8888          = 2,
-    HAL_PIXEL_FORMAT_RGB_888            = 3,
-    HAL_PIXEL_FORMAT_RGB_565            = 4,
-    HAL_PIXEL_FORMAT_BGRA_8888          = 5,
-    HAL_PIXEL_FORMAT_RGBA_5551          = 6,
-    HAL_PIXEL_FORMAT_RGBA_4444          = 7,
-
-    /* 0x8 - 0xFF range unavailable */
-
-    /*
-     * 0x100 - 0x1FF
-     *
-     * This range is reserved for pixel formats that are specific to the HAL
-     * implementation.  Implementations can use any value in this range to
-     * communicate video pixel formats between their HAL modules.  These formats
-     * must not have an alpha channel.  Additionally, an EGLimage created from a
-     * gralloc buffer of one of these formats must be supported for use with the
-     * GL_OES_EGL_image_external OpenGL ES extension.
-     */
-
-    /*
-     * Android YUV format:
-     *
-     * This format is exposed outside of the HAL to software
-     * decoders and applications.
-     * EGLImageKHR must support it in conjunction with the
-     * OES_EGL_image_external extension.
-     *
-     * YV12 is 4:2:0 YCrCb planar format comprised of a WxH Y plane followed
-     * by (W/2) x (H/2) Cr and Cb planes.
-     *
-     * This format assumes
-     * - an even width
-     * - an even height
-     * - a horizontal stride multiple of 16 pixels
-     * - a vertical stride equal to the height
-     *
-     *   y_size = stride * height
-     *   c_size = ALIGN(stride/2, 16) * height/2
-     *   size = y_size + c_size * 2
-     *   cr_offset = y_size
-     *   cb_offset = y_size + c_size
-     *
-     */
-    HAL_PIXEL_FORMAT_YV12   = 0x32315659, // YCrCb 4:2:0 Planar
-
-
-
-    /* Legacy formats (deprecated), used by ImageFormat.java */
-    HAL_PIXEL_FORMAT_YCbCr_422_SP       = 0x10, // NV16
-    HAL_PIXEL_FORMAT_YCrCb_420_SP       = 0x11, // NV21
-    HAL_PIXEL_FORMAT_YCbCr_422_I        = 0x14, // YUY2
-};
-
-
-/**
- * Transformation definitions
+ * Get the module info associated with a module instance by class 'class_id'
+ * and instance 'inst'.
  *
- * IMPORTANT NOTE:
- * HAL_TRANSFORM_ROT_90 is applied CLOCKWISE and AFTER HAL_TRANSFORM_FLIP_{H|V}.
+ * Some modules types necessitate multiple instances. For example audio supports
+ * multiple concurrent interfaces and thus 'audio' is the module class
+ * and 'primary' or 'a2dp' are module interfaces. This implies that the files
+ * providing these modules would be named audio.primary.<variant>.so and
+ * audio.a2dp.<variant>.so
  *
+ * @return: 0 == success, <0 == error and *module == NULL
  */
-
-enum {
-    /* flip source image horizontally (around the vertical axis) */
-    HAL_TRANSFORM_FLIP_H    = 0x01,
-    /* flip source image vertically (around the horizontal axis)*/
-    HAL_TRANSFORM_FLIP_V    = 0x02,
-    /* rotate source image 90 degrees clockwise */
-    HAL_TRANSFORM_ROT_90    = 0x04,
-    /* rotate source image 180 degrees */
-    HAL_TRANSFORM_ROT_180   = 0x03,
-    /* rotate source image 270 degrees clockwise */
-    HAL_TRANSFORM_ROT_270   = 0x07,
-};
+int hw_get_module_by_class(const char *class_id, const char *inst,
+                           const struct hw_module_t **module);
 
 __END_DECLS
 

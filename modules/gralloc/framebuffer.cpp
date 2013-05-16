@@ -43,12 +43,7 @@
 /*****************************************************************************/
 
 // numbers of buffers for page flipping
-#if defined(NO_PAGE_FLIPPING)
-// page-flipping is buggy on some devices
-#define NUM_BUFFERS 1
-#else
 #define NUM_BUFFERS 2
-#endif
 
 
 enum {
@@ -103,7 +98,7 @@ static int fb_post(struct framebuffer_device_t* dev, buffer_handle_t buffer)
         m->info.activate = FB_ACTIVATE_VBL;
         m->info.yoffset = offset / m->finfo.line_length;
         if (ioctl(m->framebuffer->fd, FBIOPUT_VSCREENINFO, &m->info) == -1) {
-            LOGE("FBIOPUT_VSCREENINFO failed");
+            ALOGE("FBIOPUT_VSCREENINFO failed");
             m->base.unlock(&m->base, buffer); 
             return -errno;
         }
@@ -176,21 +171,6 @@ int mapFrameBufferLocked(struct private_module_t* module)
     info.yoffset = 0;
     info.activate = FB_ACTIVATE_NOW;
 
-#if defined(NO_32BPP)
-    /*
-     * Explicitly request 5/6/5
-     */
-    info.bits_per_pixel = 16;
-    info.red.offset     = 11;
-    info.red.length     = 5;
-    info.green.offset   = 5;
-    info.green.length   = 6;
-    info.blue.offset    = 0;
-    info.blue.length    = 5;
-    info.transp.offset  = 0;
-    info.transp.length  = 0;
-#endif
-
     /*
      * Request NUM_BUFFERS screens (at lest 2 for page flipping)
      */
@@ -201,14 +181,14 @@ int mapFrameBufferLocked(struct private_module_t* module)
     if (ioctl(fd, FBIOPUT_VSCREENINFO, &info) == -1) {
         info.yres_virtual = info.yres;
         flags &= ~PAGE_FLIP;
-        LOGW("FBIOPUT_VSCREENINFO failed, page flipping not supported");
+        ALOGW("FBIOPUT_VSCREENINFO failed, page flipping not supported");
     }
 
     if (info.yres_virtual < info.yres * 2) {
         // we need at least 2 for page-flipping
         info.yres_virtual = info.yres;
         flags &= ~PAGE_FLIP;
-        LOGW("page flipping not supported (yres_virtual=%d, requested=%d)",
+        ALOGW("page flipping not supported (yres_virtual=%d, requested=%d)",
                 info.yres_virtual, info.yres*2);
     }
 
@@ -242,7 +222,7 @@ int mapFrameBufferLocked(struct private_module_t* module)
     float ydpi = (info.yres * 25.4f) / info.height;
     float fps  = refreshRate / 1000.0f;
 
-    LOGI(   "using (fd=%d)\n"
+    ALOGI(   "using (fd=%d)\n"
             "id           = %s\n"
             "xres         = %d px\n"
             "yres         = %d px\n"
@@ -264,7 +244,7 @@ int mapFrameBufferLocked(struct private_module_t* module)
             info.blue.offset, info.blue.length
     );
 
-    LOGI(   "width        = %d mm (%f dpi)\n"
+    ALOGI(   "width        = %d mm (%f dpi)\n"
             "height       = %d mm (%f dpi)\n"
             "refresh rate = %.2f Hz\n",
             info.width,  xdpi,
@@ -300,7 +280,7 @@ int mapFrameBufferLocked(struct private_module_t* module)
 
     void* vaddr = mmap(0, fbSize, PROT_READ|PROT_WRITE, MAP_SHARED, fd, 0);
     if (vaddr == MAP_FAILED) {
-        LOGE("Error mapping the framebuffer (%s)", strerror(errno));
+        ALOGE("Error mapping the framebuffer (%s)", strerror(errno));
         return -errno;
     }
     module->framebuffer->base = intptr_t(vaddr);
@@ -332,11 +312,6 @@ int fb_device_open(hw_module_t const* module, const char* name,
 {
     int status = -EINVAL;
     if (!strcmp(name, GRALLOC_HARDWARE_FB0)) {
-        alloc_device_t* gralloc_device;
-        status = gralloc_open(module, &gralloc_device);
-        if (status < 0)
-            return status;
-
         /* initialize our state here */
         fb_context_t *dev = (fb_context_t*)malloc(sizeof(*dev));
         memset(dev, 0, sizeof(*dev));
@@ -357,9 +332,6 @@ int fb_device_open(hw_module_t const* module, const char* name,
             int format = (m->info.bits_per_pixel == 32)
                          ? HAL_PIXEL_FORMAT_RGBX_8888
                          : HAL_PIXEL_FORMAT_RGB_565;
-#ifdef NO_32BPP
-            format = HAL_PIXEL_FORMAT_RGB_565;
-#endif
             const_cast<uint32_t&>(dev->device.flags) = 0;
             const_cast<uint32_t&>(dev->device.width) = m->info.xres;
             const_cast<uint32_t&>(dev->device.height) = m->info.yres;
